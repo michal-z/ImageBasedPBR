@@ -1,0 +1,10 @@
+*.pdb
+*.ilk
+*.exe
+*.cso
+*.ipdb
+*.iobj
+*.user
+/Build/.vs
+/Build/x64
+imgui.ini
