@@ -80,7 +80,7 @@ struct FMipmapGenerator
 	D3D12_CPU_DESCRIPTOR_HANDLE ScratchTexturesBaseUAV;
 };
 
-void CreateMipmapGenerator(FGraphicsContext& Gfx, FMipmapGenerator& Out);
+void CreateMipmapGenerator(FGraphicsContext& Gfx, DXGI_FORMAT Format, FMipmapGenerator& Out);
 void DestroyMipmapGenerator(FMipmapGenerator& Generator);
 void GenerateMipmaps(FGraphicsContext& Gfx, FMipmapGenerator& Generator, ID3D12Resource* Texture);
 

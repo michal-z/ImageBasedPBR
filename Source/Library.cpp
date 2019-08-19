@@ -358,10 +358,7 @@ void CreateUIContext(FGraphicsContext& Gfx, uint32_t NumSamples, FUIContext& UI,
 	PSODesc.PS = { PSBytecode.data(), PSBytecode.size() };
 	PSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
 	PSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-	if (NumSamples > 1)
-	{
-		PSODesc.RasterizerState.MultisampleEnable = TRUE;
-	}
+	PSODesc.RasterizerState.MultisampleEnable = NumSamples > 1 ? TRUE : FALSE;
 	PSODesc.BlendState.RenderTarget[0].BlendEnable = TRUE;
 	PSODesc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
 	PSODesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
@@ -515,7 +512,7 @@ void DrawUI(FGraphicsContext& Gfx, FUIContext& UI)
 	}
 }
 
-void CreateMipmapGenerator(FGraphicsContext& Gfx, FMipmapGenerator& OutGenerator)
+void CreateMipmapGenerator(FGraphicsContext& Gfx, DXGI_FORMAT Format, FMipmapGenerator& OutGenerator)
 {
 	// We will support textures up to 2048x2048 for now.
 
@@ -524,7 +521,7 @@ void CreateMipmapGenerator(FGraphicsContext& Gfx, FMipmapGenerator& OutGenerator
 
 	for (uint32_t Idx = 0; Idx < 4; ++Idx)
 	{
-		auto TextureDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, Width, Height, 1, 1);
+		auto TextureDesc = CD3DX12_RESOURCE_DESC::Tex2D(Format, Width, Height, 1, 1);
 		TextureDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
 		VHR(Gfx.Device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &TextureDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&OutGenerator.ScratchTextures[Idx])));
@@ -569,7 +566,6 @@ void GenerateMipmaps(FGraphicsContext& Gfx, FMipmapGenerator& Generator, ID3D12R
 
 	const D3D12_RESOURCE_DESC TextureDesc = Texture->GetDesc();
 
-	EA_ASSERT(TextureDesc.Format == DXGI_FORMAT_R8G8B8A8_UNORM);
 	EA_ASSERT(TextureDesc.Width <= 2048 && TextureDesc.Height <= 2048);
 	EA_ASSERT(TextureDesc.Width == TextureDesc.Height);
 	EA_ASSERT(EA::StdC::IsPowerOf2(TextureDesc.Width) && EA::StdC::IsPowerOf2(TextureDesc.Height));
@@ -586,7 +582,6 @@ void GenerateMipmaps(FGraphicsContext& Gfx, FMipmapGenerator& Generator, ID3D12R
 
 		D3D12_SHADER_RESOURCE_VIEW_DESC SRVDesc = {};
 		SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		SRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
 		SRVDesc.Texture2DArray.MostDetailedMip = 0;
 		SRVDesc.Texture2DArray.MipLevels = TextureDesc.MipLevels;

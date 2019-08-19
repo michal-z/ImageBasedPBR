@@ -57,6 +57,7 @@
     </FxCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <FxCompile Include="..\Source\Shaders\EquirectangularToCube.hlsl" />
     <FxCompile Include="..\Source\Shaders\SimpleForward.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>

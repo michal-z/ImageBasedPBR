@@ -33,5 +33,10 @@ void MainPS(
     in float3 InTexcoords : _Texcoords,
     out float4 OutColor : SV_Target0)
 {
-    OutColor = GCubeMap.Sample(GSampler, InTexcoords);
+    float3 EnvColor = GCubeMap.Sample(GSampler, InTexcoords).rgb;
+
+	EnvColor = EnvColor / (EnvColor + 1.0f);
+	EnvColor = pow(EnvColor, 1.0f / 2.2f);
+
+	OutColor = float4(EnvColor, 1.0f);
 }
