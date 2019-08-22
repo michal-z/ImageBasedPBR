@@ -58,6 +58,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <FxCompile Include="..\Source\Shaders\EquirectangularToCube.hlsl" />
+    <FxCompile Include="..\Source\Shaders\GenerateIrradianceMap.hlsl" />
+    <FxCompile Include="..\Source\Shaders\PrefilterEnvMap.hlsl" />
+    <FxCompile Include="..\Source\Shaders\SampleEnvMap.hlsl" />
     <FxCompile Include="..\Source\Shaders\SimpleForward.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
@@ -66,7 +69,6 @@
       <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       </HeaderFileOutput>
     </FxCompile>
-    <FxCompile Include="..\Source\Shaders\SkyBox.hlsl" />
     <FxCompile Include="..\Source\Shaders\Test.hlsl" />
     <FxCompile Include="..\Source\Shaders\UserInterface.hlsl" />
   </ItemGroup>

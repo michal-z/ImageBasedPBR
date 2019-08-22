@@ -215,7 +215,7 @@ static void CreateHeaps(FGraphicsContext& Gfx)
 {
 	// Render target descriptor heap (RTV).
 	{
-		Gfx.RTVHeap.Capacity = 16;
+		Gfx.RTVHeap.Capacity = 1024;
 
 		D3D12_DESCRIPTOR_HEAP_DESC HeapDesc = {};
 		HeapDesc.NumDescriptors = Gfx.RTVHeap.Capacity;
@@ -226,7 +226,7 @@ static void CreateHeaps(FGraphicsContext& Gfx)
 	}
 	// Depth-stencil descriptor heap (DSV).
 	{
-		Gfx.DSVHeap.Capacity = 8;
+		Gfx.DSVHeap.Capacity = 1024;
 
 		D3D12_DESCRIPTOR_HEAP_DESC HeapDesc = {};
 		HeapDesc.NumDescriptors = Gfx.DSVHeap.Capacity;
@@ -237,7 +237,7 @@ static void CreateHeaps(FGraphicsContext& Gfx)
 	}
 	// Non-shader visible descriptor heap (CBV, SRV, UAV).
 	{
-		Gfx.CPUDescriptorHeap.Capacity = 10000;
+		Gfx.CPUDescriptorHeap.Capacity = 16 * 1024;
 
 		D3D12_DESCRIPTOR_HEAP_DESC HeapDesc = {};
 		HeapDesc.NumDescriptors = Gfx.CPUDescriptorHeap.Capacity;
@@ -251,7 +251,7 @@ static void CreateHeaps(FGraphicsContext& Gfx)
 		for (uint32_t Idx = 0; Idx < 2; ++Idx)
 		{
 			FDescriptorHeap& Heap = Gfx.GPUDescriptorHeaps[Idx];
-			Heap.Capacity = 10000;
+			Heap.Capacity = 16 * 1024;
 
 			D3D12_DESCRIPTOR_HEAP_DESC HeapDesc = {};
 			HeapDesc.NumDescriptors = Heap.Capacity;
@@ -571,8 +571,6 @@ void GenerateMipmaps(FGraphicsContext& Gfx, FMipmapGenerator& Generator, ID3D12R
 	EA_ASSERT(EA::StdC::IsPowerOf2(TextureDesc.Width) && EA::StdC::IsPowerOf2(TextureDesc.Height));
 	EA_ASSERT(TextureDesc.MipLevels > 1);
 
-	FDescriptorHeap SavedHeapState = GetDescriptorHeapState(Gfx);
-
 	ID3D12GraphicsCommandList2* CmdList = Gfx.CmdList;
 
 
@@ -648,8 +646,6 @@ void GenerateMipmaps(FGraphicsContext& Gfx, FMipmapGenerator& Generator, ID3D12R
 			CurrentSrcMipLevel += NumMipsInDispatch;
 		}
 	}
-
-	RestoreDescriptorHeapState(Gfx, SavedHeapState);
 }
 
 eastl::vector<uint8_t> LoadFile(const char* Name)

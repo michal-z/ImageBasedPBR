@@ -9,7 +9,13 @@ typedef XMFLOAT3 float3;
 typedef XMFLOAT4 float4;
 #endif
 
-struct FPerDrawConstantData
+#ifdef __cplusplus
+#define SALIGN alignas(256)
+#else
+#define SALIGN
+#endif
+
+struct SALIGN FPerDrawConstantData
 {
 	float4x4 ObjectToClip;
 	float4x3 ObjectToWorld;
@@ -17,15 +23,15 @@ struct FPerDrawConstantData
 	float Metallic;
 	float Roughness;
 	float AO;
-	float Padding[30];
 };
-#ifdef __cplusplus
-static_assert(sizeof(FPerDrawConstantData) == 256, "sizeof(FPerDrawConstantData) != 256");
-#endif
 
-struct FPerFrameConstantData
+struct SALIGN FPerFrameConstantData
 {
 	float4 LightPositions[4];
 	float4 LightColors[4];
 	float4 ViewerPosition;
 };
+
+#ifdef __cplusplus
+#undef SALIGN
+#endif

@@ -46,6 +46,7 @@
       <ShaderModel>6.0</ShaderModel>
       <ObjectFileOutput>$(OutDir)Data\Shaders\%(Filename).vs.cso</ObjectFileOutput>
       <ShaderType>Vertex</ShaderType>
+      <AdditionalOptions>/Ges %(AdditionalOptions)</AdditionalOptions>
     </FxCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -54,12 +55,15 @@
       <ShaderModel>6.0</ShaderModel>
       <ObjectFileOutput>$(OutDir)Data\Shaders\%(Filename).vs.cso</ObjectFileOutput>
       <ShaderType>Vertex</ShaderType>
+      <AdditionalOptions>/Ges %(AdditionalOptions)</AdditionalOptions>
     </FxCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <FxCompile Include="..\Source\Shaders\EquirectangularToCube.hlsl" />
+    <FxCompile Include="..\Source\Shaders\GenerateIrradianceMap.hlsl" />
+    <FxCompile Include="..\Source\Shaders\PrefilterEnvMap.hlsl" />
+    <FxCompile Include="..\Source\Shaders\SampleEnvMap.hlsl" />
     <FxCompile Include="..\Source\Shaders\SimpleForward.hlsl" />
-    <FxCompile Include="..\Source\Shaders\SkyBox.hlsl" />
     <FxCompile Include="..\Source\Shaders\Test.hlsl" />
     <FxCompile Include="..\Source\Shaders\UserInterface.hlsl" />
   </ItemGroup>

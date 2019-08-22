@@ -123,16 +123,6 @@ inline D3D12_CPU_DESCRIPTOR_HANDLE AllocateDescriptors(FGraphicsContext& Gfx, D3
 	return CPUHandle;
 }
 
-inline FDescriptorHeap GetDescriptorHeapState(FGraphicsContext& Gfx)
-{
-	return Gfx.CPUDescriptorHeap;
-}
-
-inline void RestoreDescriptorHeapState(FGraphicsContext& Gfx, FDescriptorHeap HeapState)
-{
-	Gfx.CPUDescriptorHeap = HeapState;
-}
-
 inline void AllocateGPUDescriptors(FGraphicsContext& Gfx, uint32_t Count, D3D12_CPU_DESCRIPTOR_HANDLE& OutCPUHandle, D3D12_GPU_DESCRIPTOR_HANDLE& OutGPUHandle)
 {
 	uint32_t DescriptorSize;

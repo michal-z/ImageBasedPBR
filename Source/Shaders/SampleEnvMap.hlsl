@@ -6,41 +6,38 @@
     "DescriptorTable(SRV(t0), visibility = SHADER_VISIBILITY_PIXEL), " \
     "StaticSampler(" \
 		"s0, " \
-		"filter = FILTER_MIN_MAG_LINEAR_MIP_POINT, " \
+		"filter = FILTER_MIN_MAG_MIP_LINEAR, " \
 		"visibility = SHADER_VISIBILITY_PIXEL, " \
 		"addressU = TEXTURE_ADDRESS_BORDER, " \
-		"addressV = TEXTURE_ADDRESS_BORDER)"
+		"addressV = TEXTURE_ADDRESS_BORDER, " \
+		"addressW = TEXTURE_ADDRESS_BORDER)"
 
 ConstantBuffer<FPerDrawConstantData> GPerDrawCB : register(b0);
 
-Texture2D GEquirectangularMap : register(t0);
+TextureCube GEnvMap : register(t0);
 SamplerState GSampler : register(s0);
-
-float2 SampleSphericalMap(float3 V)
-{
-	float2 UV = float2(atan2(V.z, V.x), asin(V.y));
-	UV *= float2(0.1591f, 0.3183f);
-	UV += 0.5f;
-	return UV;
-}
 
 [RootSignature(GRootSignature)]
 void MainVS(
 	in float3 InPosition : _Position,
 	in float3 InNormal : _Normal,
 	out float4 OutPosition : SV_Position,
-	out float3 OutPositionOS : _Position)
+	out float3 OutTexcoords : _Texcoords)
 {
-	OutPosition = mul(float4(InPosition, 1.0f), GPerDrawCB.ObjectToClip);
-	OutPositionOS = InPosition;
+	OutPosition = mul(float4(InPosition, 1.0f), GPerDrawCB.ObjectToClip).xyww;
+	OutTexcoords = InPosition;
 }
 
 [RootSignature(GRootSignature)]
 void MainPS(
 	in float4 InPosition : SV_Position,
-	in float3 InPositionOS : _Position,
+	in float3 InTexcoords : _Texcoords,
 	out float4 OutColor : SV_Target0)
 {
-	float2 UV = SampleSphericalMap(normalize(InPositionOS));
-	OutColor = GEquirectangularMap.SampleLevel(GSampler, UV, 0);
+	float3 EnvColor = GEnvMap.Sample(GSampler, InTexcoords).rgb;
+
+	EnvColor = EnvColor / (EnvColor + 1.0f);
+	EnvColor = pow(EnvColor, 1.0f / 2.2f);
+
+	OutColor = float4(EnvColor, 1.0f);
 }
