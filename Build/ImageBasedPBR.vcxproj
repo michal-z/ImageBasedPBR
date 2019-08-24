@@ -274,8 +274,10 @@
     <None Include="..\Source\External\DirectXMath\DirectXPackedVector.inl" />
     <None Include="..\Source\External\EAStdC\internal\EAMemory.inl" />
     <None Include="..\Source\External\EAStdC\Win32\EAMathHelpWin32.inl" />
+    <None Include="..\Source\Shaders\Common.hlsli" />
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="..\Source\Shaders\GenerateBRDFIntegrationMap.hlsl" />
     <FxCompile Include="..\Source\Shaders\GenerateMipmaps.hlsl">
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.0</ShaderModel>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.0</ShaderModel>

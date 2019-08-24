@@ -1,4 +1,5 @@
 #include "../CPUAndGPUCommon.h"
+#include "Common.hlsli"
 
 #define GRootSignature \
     "RootFlags(ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT), " \
@@ -13,11 +14,9 @@
 		"addressW = TEXTURE_ADDRESS_BORDER)"
 
 ConstantBuffer<FPerDrawConstantData> GPerDrawCB : register(b0);
-
 TextureCube GEnvMap : register(t0);
 SamplerState GSampler : register(s0);
 
-#define PI 3.14159265359f
 
 [RootSignature(GRootSignature)]
 void MainVS(

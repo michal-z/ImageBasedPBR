@@ -14,7 +14,7 @@ enum
 
 enum
 {
-	PSO_Test, PSO_SimpleForward, PSO_SampleEnvMap, PSO_EquirectangularToCube, PSO_GenerateIrradianceMap, PSO_PrefilterEnvMap,
+	PSO_Test, PSO_SimpleForward, PSO_SampleEnvMap, PSO_EquirectangularToCube, PSO_GenerateIrradianceMap, PSO_PrefilterEnvMap, PSO_GenerateBRDFIntegrationMap,
 };
 
 struct FVertex
@@ -56,9 +56,11 @@ struct FDemoRoot
 	ID3D12Resource* EnvMap;
 	ID3D12Resource* IrradianceMap;
 	ID3D12Resource* PrefilteredEnvMap;
+	ID3D12Resource* BRDFIntegrationMap;
 	D3D12_CPU_DESCRIPTOR_HANDLE EnvMapSRV;
 	D3D12_CPU_DESCRIPTOR_HANDLE IrradianceMapSRV;
 	D3D12_CPU_DESCRIPTOR_HANDLE PrefilteredEnvMapSRV;
+	D3D12_CPU_DESCRIPTOR_HANDLE BRDFIntegrationMapSRV;
 	ID3D12Resource* MSColorBuffer;
 	ID3D12Resource* MSDepthBuffer;
 	D3D12_CPU_DESCRIPTOR_HANDLE MSColorBufferRTV;
@@ -126,14 +128,23 @@ static void Draw(FDemoRoot& Root)
 
 			CD3DX12_CPU_DESCRIPTOR_HANDLE TableBaseCPU;
 			CD3DX12_GPU_DESCRIPTOR_HANDLE TableBaseGPU;
-			AllocateGPUDescriptors(Gfx, 2, TableBaseCPU, TableBaseGPU);
+			AllocateGPUDescriptors(Gfx, 4, TableBaseCPU, TableBaseGPU);
 
 			D3D12_CONSTANT_BUFFER_VIEW_DESC CBVDesc = {};
 			CBVDesc.BufferLocation = GPUAddress;
 			CBVDesc.SizeInBytes = (uint32_t)sizeof(FPerFrameConstantData);
 
-			Gfx.Device->CreateConstantBufferView(&CBVDesc, TableBaseCPU.Offset(0, Gfx.DescriptorSize));
-			Gfx.Device->CopyDescriptorsSimple(1, TableBaseCPU.Offset(1, Gfx.DescriptorSize), Root.IrradianceMapSRV, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			Gfx.Device->CreateConstantBufferView(&CBVDesc, TableBaseCPU);
+			TableBaseCPU.Offset(Gfx.DescriptorSize);
+
+			Gfx.Device->CopyDescriptorsSimple(1, TableBaseCPU, Root.IrradianceMapSRV, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			TableBaseCPU.Offset(Gfx.DescriptorSize);
+
+			Gfx.Device->CopyDescriptorsSimple(1, TableBaseCPU, Root.PrefilteredEnvMapSRV, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			TableBaseCPU.Offset(Gfx.DescriptorSize);
+
+			Gfx.Device->CopyDescriptorsSimple(1, TableBaseCPU, Root.BRDFIntegrationMapSRV, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			TableBaseCPU.Offset(Gfx.DescriptorSize);
 
 			CmdList->SetGraphicsRootDescriptorTable(1, TableBaseGPU);
 		}
@@ -246,6 +257,26 @@ static void AddGraphicsPipeline(FGraphicsContext& Gfx, D3D12_GRAPHICS_PIPELINE_S
 	OutSignatures.push_back(RootSignature);
 }
 
+static void AddComputePipeline(FGraphicsContext& Gfx, const char* CSName, eastl::vector<ID3D12PipelineState*>& OutPipelines, eastl::vector<ID3D12RootSignature*>& OutSignatures)
+{
+	char Path[MAX_PATH];
+
+	EA::StdC::Snprintf(Path, sizeof(Path), "Data/Shaders/%s", CSName);
+	eastl::vector<uint8_t> CSBytecode = LoadFile(Path);
+
+	ID3D12RootSignature* RootSignature;
+	VHR(Gfx.Device->CreateRootSignature(0, CSBytecode.data(), CSBytecode.size(), IID_PPV_ARGS(&RootSignature)));
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC PSODesc = {};
+	PSODesc.pRootSignature = RootSignature;
+	PSODesc.CS = { CSBytecode.data(), CSBytecode.size() };
+
+	ID3D12PipelineState* Pipeline;
+	VHR(Gfx.Device->CreateComputePipelineState(&PSODesc, IID_PPV_ARGS(&Pipeline)));
+	OutPipelines.push_back(Pipeline);
+	OutSignatures.push_back(RootSignature);
+}
+
 static void CreatePipelines(FGraphicsContext& Gfx, uint32_t NumSamples, eastl::vector<ID3D12PipelineState*>& OutPipelines, eastl::vector<ID3D12RootSignature*>& OutSignatures)
 {
 	const D3D12_INPUT_ELEMENT_DESC InPositionNormal[] =
@@ -332,6 +363,9 @@ static void CreatePipelines(FGraphicsContext& Gfx, uint32_t NumSamples, eastl::v
 		EA_ASSERT(OutPipelines.size() == PSO_PrefilterEnvMap);
 		AddGraphicsPipeline(Gfx, PSODesc, "PrefilterEnvMap.vs.cso", "PrefilterEnvMap.ps.cso", OutPipelines, OutSignatures);
 	}
+
+	EA_ASSERT(OutPipelines.size() == PSO_GenerateBRDFIntegrationMap);
+	AddComputePipeline(Gfx, "GenerateBRDFIntegrationMap.cs.cso", OutPipelines, OutSignatures);
 }
 
 static void CreateEnvMap(FGraphicsContext& Gfx, const FStaticMesh& Cube, ID3D12Resource*& OutEnvMap, D3D12_CPU_DESCRIPTOR_HANDLE& OutEnvMapSRV, eastl::vector<ID3D12Resource*>& OutTempResources)
@@ -537,7 +571,7 @@ static void CreateIrradianceMap(FGraphicsContext& Gfx, D3D12_CPU_DESCRIPTOR_HAND
 static void CreatePrefilteredEnvMap(FGraphicsContext& Gfx, D3D12_CPU_DESCRIPTOR_HANDLE EnvMapSRV, const FStaticMesh& Cube, ID3D12Resource*& OutPrefilteredEnvMap, D3D12_CPU_DESCRIPTOR_HANDLE& OutPrefilteredEnvMapSRV, eastl::vector<ID3D12Resource*>& OutTempResources)
 {
 	const uint32_t CubeMapResolution = 256;
-	const uint32_t NumMipLevelsUsed = 6;
+	const uint32_t NumMipLevelsUsed = 6; // 256, 128, 64, 32, 16, 8
 
 	ID3D12Resource* TempCubeMap;
 	const D3D12_CPU_DESCRIPTOR_HANDLE TempCubeMapRTVs = AllocateDescriptors(Gfx, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 6 * NumMipLevelsUsed);
@@ -627,6 +661,43 @@ static void CreatePrefilteredEnvMap(FGraphicsContext& Gfx, D3D12_CPU_DESCRIPTOR_
 	CmdList->CopyResource(OutPrefilteredEnvMap, TempCubeMap);
 
 	Gfx.CmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(OutPrefilteredEnvMap, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+}
+
+static void CreateBRDFIntegrationMap(FGraphicsContext& Gfx, ID3D12Resource*& OutBRDFIntegrationMap, D3D12_CPU_DESCRIPTOR_HANDLE& OutBRDFIntegrationMapSRV, eastl::vector<ID3D12Resource*>& OutTempResources)
+{
+	const uint32_t MapResolution = 512;
+	EA_ASSERT(EA::StdC::IsPowerOf2(MapResolution));
+
+	ID3D12Resource* TempTexture;
+	const D3D12_CPU_DESCRIPTOR_HANDLE TempTextureUAV = AllocateDescriptors(Gfx, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	{
+		auto Desc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R16G16_FLOAT, MapResolution, MapResolution, 1, 1);
+		VHR(Gfx.Device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&OutBRDFIntegrationMap)));
+
+		OutBRDFIntegrationMapSRV = AllocateDescriptors(Gfx, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+
+		Gfx.Device->CreateShaderResourceView(OutBRDFIntegrationMap, nullptr, OutBRDFIntegrationMapSRV);
+
+
+		Desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+		VHR(Gfx.Device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&TempTexture)));
+		OutTempResources.push_back(TempTexture);
+
+		Gfx.Device->CreateUnorderedAccessView(TempTexture, nullptr, nullptr, TempTextureUAV);
+	}
+
+	ID3D12GraphicsCommandList2* CmdList = Gfx.CmdList;
+
+
+	CmdList->SetComputeRootDescriptorTable(0, CopyDescriptorsToGPUHeap(Gfx, 1, TempTextureUAV));
+	CmdList->Dispatch(MapResolution / 8, MapResolution / 8, 1);
+
+
+	CmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(TempTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE));
+
+	CmdList->CopyResource(OutBRDFIntegrationMap, TempTexture);
+
+	Gfx.CmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(OutBRDFIntegrationMap, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 }
 
 static void Initialize(FDemoRoot& Root)
@@ -758,12 +829,17 @@ static void Initialize(FDemoRoot& Root)
 	Gfx.CmdList->SetPipelineState(Root.Pipelines[PSO_GenerateIrradianceMap]);
 	Gfx.CmdList->SetGraphicsRootSignature(Root.RootSignatures[PSO_GenerateIrradianceMap]);
 	CreateIrradianceMap(Root.Gfx, Root.EnvMapSRV, Root.StaticMeshes[MESH_Cube], Root.IrradianceMap, Root.IrradianceMapSRV, TempResources);
-	TexturesThatNeedMipmaps.push_back(Root.IrradianceMap);
-
+	//TexturesThatNeedMipmaps.push_back(Root.IrradianceMap);
+	
 	// Create PrefilteredEnvMap.
 	Gfx.CmdList->SetPipelineState(Root.Pipelines[PSO_PrefilterEnvMap]);
 	Gfx.CmdList->SetGraphicsRootSignature(Root.RootSignatures[PSO_PrefilterEnvMap]);
 	CreatePrefilteredEnvMap(Gfx, Root.EnvMapSRV, Root.StaticMeshes[MESH_Cube], Root.PrefilteredEnvMap, Root.PrefilteredEnvMapSRV, TempResources);
+
+	// Create BRDFIntegrationMap.
+	Gfx.CmdList->SetPipelineState(Root.Pipelines[PSO_GenerateBRDFIntegrationMap]);
+	Gfx.CmdList->SetComputeRootSignature(Root.RootSignatures[PSO_GenerateBRDFIntegrationMap]);
+	CreateBRDFIntegrationMap(Gfx, Root.BRDFIntegrationMap, Root.BRDFIntegrationMapSRV, TempResources);
 
 	// Setup resources for MSAA.
 	{
@@ -839,6 +915,7 @@ static void Shutdown(FDemoRoot& Root)
 	SAFE_RELEASE(Root.EnvMap);
 	SAFE_RELEASE(Root.IrradianceMap);
 	SAFE_RELEASE(Root.PrefilteredEnvMap);
+	SAFE_RELEASE(Root.BRDFIntegrationMap);
 	SAFE_RELEASE(Root.MSColorBuffer);
 	SAFE_RELEASE(Root.MSDepthBuffer);
 	DestroyUIContext(Root.UI);

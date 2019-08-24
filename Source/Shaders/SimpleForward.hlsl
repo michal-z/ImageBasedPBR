@@ -1,9 +1,10 @@
 #include "../CPUAndGPUCommon.h"
+#include "Common.hlsli"
 
 #define GRootSignature \
     "RootFlags(ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT), " \
     "CBV(b0), " \
-	"DescriptorTable(CBV(b1), SRV(t0), visibility = SHADER_VISIBILITY_PIXEL), " \
+	"DescriptorTable(CBV(b1), SRV(t0), SRV(t1), SRV(t2), visibility = SHADER_VISIBILITY_PIXEL), " \
 	"StaticSampler(" \
 		"s0, " \
 		"filter = FILTER_MIN_MAG_MIP_LINEAR, " \
@@ -15,6 +16,8 @@
 ConstantBuffer<FPerDrawConstantData> GPerDrawCB : register(b0);
 ConstantBuffer<FPerFrameConstantData> GPerFrameCB : register(b1);
 TextureCube GIrradianceMap : register(t0);
+TextureCube GPrefilteredEnvMap : register(t1);
+Texture2D GBRDFIntegrationMap : register(t2);
 SamplerState GSampler : register(s0);
 
 
@@ -29,40 +32,6 @@ void MainVS(
 	OutPosition = mul(float4(InPosition, 1.0f), GPerDrawCB.ObjectToClip);
 	OutPositionWS = mul(float4(InPosition, 1.0f), GPerDrawCB.ObjectToWorld);
 	OutNormalWS = mul(InNormal, (float3x3)GPerDrawCB.ObjectToWorld);
-}
-
-#define PI 3.14159265359f
-
-// Trowbridge-Reitz GGX normal distribution function.
-float DistributionGGX(float3 N, float3 H, float Alpha)
-{
-	float Alpha2 = Alpha * Alpha;
-	float NoH = dot(N, H);
-	float NoH2 = NoH * NoH;
-	float K = NoH2 * Alpha2 + (1.0f - NoH2);
-	return Alpha2 / (PI * K * K);
-}
-
-float GeometrySchlickGGX(float CosTheta, float K)
-{
-	return CosTheta / (CosTheta * (1.0f - K) + K);
-}
-
-float GeometrySmith(float3 N, float3 V, float3 L, float K)
-{
-	float NoV = saturate(dot(N, V));
-	float NoL = saturate(dot(N, L));
-	return GeometrySchlickGGX(NoV, K) * GeometrySchlickGGX(NoL, K);
-}
-
-float3 FresnelSchlick(float CosTheta, float3 F0)
-{
-	return F0 + (1.0f - F0) * pow(1.0f - CosTheta, 5.0f);
-}
-
-float3 FresnelSchlickRoughness(float CosTheta, float3 F0, float Roughness)
-{
-	return F0 + (max(1.0f - Roughness, F0) - F0) * pow(1.0f - CosTheta, 5.0f);
 }
 
 [RootSignature(GRootSignature)]
@@ -80,9 +49,6 @@ void MainPS(
 	float Metallic = GPerDrawCB.Metallic;
 	float AO = GPerDrawCB.AO;
 
-	float Alpha = Roughness * Roughness;
-	float K = Roughness;// +1.0f;
-	//K = (K * K) / 8.0f;
 	float3 F0 = float3(0.04f, 0.04f, 0.04f);
 	F0 = lerp(F0, Albedo, Metallic);
 
@@ -100,8 +66,8 @@ void MainPS(
 
 		float3 F = FresnelSchlick(saturate(dot(H, V)), F0);
 
-		float NDF = DistributionGGX(N, H, Alpha);
-		float G = GeometrySmith(N, V, L, K);
+		float NDF = DistributionGGX(N, H, Roughness);
+		float G = GeometrySmith(N, V, L, (Roughness + 1.0f) * 0.5f);
 
 		float3 Numerator = NDF * G * F;
 		float Denominator = 4.0f * saturate(dot(N, V)) * saturate(dot(N, L));
@@ -115,9 +81,24 @@ void MainPS(
 		Lo += (KD * (Albedo / PI) + Specular) * Radiance * NoL;
 	}
 
-	float3 KD = 1.0f - FresnelSchlickRoughness(saturate(dot(N, V)), F0, Roughness);
-	float3 Irradiance = GIrradianceMap.Sample(GSampler, N).rgb;
-	float3 Ambient = KD * Irradiance * Albedo * AO;
+	float3 R = reflect(-V, N);
+
+	float3 F = FresnelSchlickRoughness(saturate(dot(N, V)), F0, Roughness);
+
+	float3 KD = 1.0f - F;
+	KD *= 1.0f - Metallic;
+
+	float3 Irradiance = GIrradianceMap.SampleLevel(GSampler, N, 0.0f).rgb;
+	float3 Diffuse = Irradiance * Albedo;
+	float3 PrefilteredColor = GPrefilteredEnvMap.SampleLevel(GSampler, R, Roughness * 5.0f).rgb;
+
+	float NoV = clamp(dot(N, V), 0.0f, 0.999f);
+
+	float2 EnvBRDF = GBRDFIntegrationMap.SampleLevel(GSampler, float2(NoV, Roughness), 0.0f).rg;
+
+	float3 Specular = PrefilteredColor * (F * EnvBRDF.x + EnvBRDF.y);
+
+	float3 Ambient = (KD * Diffuse + Specular) * AO;
 
 	float3 Color = Ambient + Lo;
 	Color = Color / (Color + 1.0f);

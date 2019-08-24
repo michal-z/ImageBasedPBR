@@ -52,12 +52,11 @@
     <Filter Include="External\EAThread\x86-64">
       <UniqueIdentifier>{d9e0bb46-3bb1-414d-95ef-b5d0ecef93c8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="ComputeShaders">
+    <Filter Include="Shaders">
       <UniqueIdentifier>{7fa9c078-e133-442e-bdd0-fe559bc08a27}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Source\Demo.cpp" />
     <ClCompile Include="..\Source\Library.cpp" />
     <ClCompile Include="..\Source\External\imgui\imgui.cpp">
       <Filter>External\imgui</Filter>
@@ -203,6 +202,7 @@
     <ClCompile Include="..\Source\External\stb_image.cpp">
       <Filter>External</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\ImageBasedPBR.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Source\Library.h" />
@@ -830,10 +830,16 @@
     <None Include="..\Source\External\EAStdC\Win32\EAMathHelpWin32.inl">
       <Filter>External\EAStdC\Win32</Filter>
     </None>
+    <None Include="..\Source\Shaders\Common.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\Source\Shaders\GenerateMipmaps.hlsl">
-      <Filter>ComputeShaders</Filter>
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\Source\Shaders\GenerateBRDFIntegrationMap.hlsl">
+      <Filter>Shaders</Filter>
     </FxCompile>
   </ItemGroup>
 </Project>
