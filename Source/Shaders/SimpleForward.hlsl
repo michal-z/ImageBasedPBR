@@ -20,6 +20,26 @@ TextureCube GPrefilteredEnvMap : register(t1);
 Texture2D GBRDFIntegrationMap : register(t2);
 SamplerState GSampler : register(s0);
 
+// Trowbridge-Reitz GGX normal distribution function.
+float DistributionGGX(float3 N, float3 H, float Roughness)
+{
+	float Alpha = Roughness * Roughness;
+	float Alpha2 = Alpha * Alpha;
+	float NoH = dot(N, H);
+	float NoH2 = NoH * NoH;
+	float K = NoH2 * Alpha2 + (1.0f - NoH2);
+	return Alpha2 / (PI * K * K);
+}
+
+float3 FresnelSchlick(float CosTheta, float3 F0)
+{
+	return F0 + (1.0f - F0) * pow(1.0f - CosTheta, 5.0f);
+}
+
+float3 FresnelSchlickRoughness(float CosTheta, float3 F0, float Roughness)
+{
+	return F0 + (max(1.0f - Roughness, F0) - F0) * pow(1.0f - CosTheta, 5.0f);
+}
 
 [RootSignature(GRootSignature)]
 void MainVS(
@@ -43,6 +63,7 @@ void MainPS(
 {
 	float3 V = normalize(GPerFrameCB.ViewerPosition.xyz - InPositionWS);
 	float3 N = normalize(InNormalWS);
+	float NoV = saturate(dot(N, V));
 
 	float3 Albedo = GPerDrawCB.Albedo;
 	float Roughness = GPerDrawCB.Roughness;
@@ -59,31 +80,29 @@ void MainPS(
 
 		float3 L = normalize(LightVector);
 		float3 H = normalize(L + V);
+		float NoL = saturate(dot(N, L));
+		float HoV = saturate(dot(H, V));
 
-		float Distance = length(LightVector);
-		float Attenuation = 1.0f / (Distance * Distance);
+		float Attenuation = 1.0f / dot(LightVector, LightVector);
 		float3 Radiance = GPerFrameCB.LightColors[LightIdx].rgb * Attenuation;
 
-		float3 F = FresnelSchlick(saturate(dot(H, V)), F0);
+		float3 F = FresnelSchlick(HoV, F0);
 
 		float NDF = DistributionGGX(N, H, Roughness);
-		float G = GeometrySmith(N, V, L, (Roughness + 1.0f) * 0.5f);
+		float G = GeometrySmith(NoL, NoV, (Roughness + 1.0f) * 0.5f);
 
-		float3 Numerator = NDF * G * F;
-		float Denominator = 4.0f * saturate(dot(N, V)) * saturate(dot(N, L));
-		float3 Specular = Numerator / max(Denominator, 0.001f);
+		float3 Specular = (NDF * G * F) / max(4.0f * NoV * NoL, 0.001f);
 
 		float3 KS = F;
 		float3 KD = 1.0f - KS;
 		KD *= 1.0f - Metallic;
 
-		float NoL = saturate(dot(N, L));
 		Lo += (KD * (Albedo / PI) + Specular) * Radiance * NoL;
 	}
 
 	float3 R = reflect(-V, N);
 
-	float3 F = FresnelSchlickRoughness(saturate(dot(N, V)), F0, Roughness);
+	float3 F = FresnelSchlickRoughness(NoV, F0, Roughness);
 
 	float3 KD = 1.0f - F;
 	KD *= 1.0f - Metallic;
@@ -92,9 +111,7 @@ void MainPS(
 	float3 Diffuse = Irradiance * Albedo;
 	float3 PrefilteredColor = GPrefilteredEnvMap.SampleLevel(GSampler, R, Roughness * 5.0f).rgb;
 
-	float NoV = clamp(dot(N, V), 0.0f, 0.999f);
-
-	float2 EnvBRDF = GBRDFIntegrationMap.SampleLevel(GSampler, float2(NoV, Roughness), 0.0f).rg;
+	float2 EnvBRDF = GBRDFIntegrationMap.SampleLevel(GSampler, float2(min(NoV, 0.999f), Roughness), 0.0f).rg;
 
 	float3 Specular = PrefilteredColor * (F * EnvBRDF.x + EnvBRDF.y);
 

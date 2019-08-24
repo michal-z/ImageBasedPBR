@@ -37,36 +37,13 @@ float3 ImportanceSampleGGX(float2 Xi, float Roughness, float3 N)
 	return TangentX * H.x + TangentY * H.y + N * H.z;
 }
 
-// Trowbridge-Reitz GGX normal distribution function.
-float DistributionGGX(float3 N, float3 H, float Roughness)
-{
-	float Alpha = Roughness * Roughness;
-	float Alpha2 = Alpha * Alpha;
-	float NoH = dot(N, H);
-	float NoH2 = NoH * NoH;
-	float K = NoH2 * Alpha2 + (1.0f - NoH2);
-	return Alpha2 / (PI * K * K);
-}
-
 float GeometrySchlickGGX(float CosTheta, float Roughness)
 {
 	float K = (Roughness * Roughness) * 0.5f;
 	return CosTheta / (CosTheta * (1.0f - K) + K);
 }
 
-float GeometrySmith(float3 N, float3 V, float3 L, float Roughness)
+float GeometrySmith(float NoL, float NoV, float Roughness)
 {
-	float NoV = saturate(dot(N, V));
-	float NoL = saturate(dot(N, L));
 	return GeometrySchlickGGX(NoV, Roughness) * GeometrySchlickGGX(NoL, Roughness);
-}
-
-float3 FresnelSchlick(float CosTheta, float3 F0)
-{
-	return F0 + (1.0f - F0) * pow(1.0f - CosTheta, 5.0f);
-}
-
-float3 FresnelSchlickRoughness(float CosTheta, float3 F0, float Roughness)
-{
-	return F0 + (max(1.0f - Roughness, F0) - F0) * pow(1.0f - CosTheta, 5.0f);
 }

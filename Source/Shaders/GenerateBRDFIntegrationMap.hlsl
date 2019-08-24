@@ -33,7 +33,7 @@ float2 IntegrateBRDF(float Roughness, float NoV)
 
 		if (NoL > 0.0f)
 		{
-			float G = GeometrySmith(N, V, L, Roughness);
+			float G = GeometrySmith(NoL, NoV, Roughness);
 			float G_Vis = G * VoH / (NoH * NoV);
 			float Fc = pow(1.0f - VoH, 5.0f);
 			A += (1.0f - Fc) * G_Vis;
