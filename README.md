@@ -1,4 +1,4 @@
 # ImageBasedPBR
-Image Based Lighting using DirectX 12 (WIP).
+Image Based Lighting using DirectX 12.
 
 ![image](/ImageBasedPBR.png)
