@@ -10,7 +10,7 @@
 #pragma comment(lib, "dxgi.lib")
 
 
-void CreateHeaps(FGraphicsContext& Gfx);
+static void CreateHeaps(FGraphicsContext& Gfx);
 
 void* operator new[](size_t Size, const char* /*Name*/, int /*Flags*/, unsigned /*DebugFlags*/, const char* /*File*/, int /*Line*/)
 {

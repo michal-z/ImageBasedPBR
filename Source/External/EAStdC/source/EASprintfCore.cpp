@@ -441,7 +441,7 @@ template <typename InCharT, typename OutCharT>
 struct StringFormatHelper<true, InCharT, OutCharT>
 {
 	int operator()(int(*pWriteFunction)(const OutCharT* EA_RESTRICT pData, size_t nCount, void* EA_RESTRICT pContext, WriteFunctionState wfs),
-		void* EA_RESTRICT pWriteFunctionContext, const SprintfLocal::FormatData& fd, OutCharT* pScratchBuffer, const InCharT* pInBufferData)
+		void* EA_RESTRICT pWriteFunctionContext, const SprintfLocal::FormatData& fd, OutCharT* /*pScratchBuffer*/, const InCharT* pInBufferData)
 	{
 		int nWriteCount = StringFormatLength(fd, pInBufferData);
 		return WriteBuffer(pWriteFunction, pWriteFunctionContext, fd, pInBufferData, nWriteCount);

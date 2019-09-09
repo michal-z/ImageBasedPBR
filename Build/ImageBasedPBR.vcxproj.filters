@@ -203,6 +203,9 @@
       <Filter>External</Filter>
     </ClCompile>
     <ClCompile Include="..\Source\ImageBasedPBR.cpp" />
+    <ClCompile Include="..\Source\External\cgltf.cpp">
+      <Filter>External</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Source\Library.h" />
@@ -802,6 +805,9 @@
       <Filter>External\EAThread\x86-64</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\External\stb_image.h">
+      <Filter>External</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\External\cgltf.h">
       <Filter>External</Filter>
     </ClInclude>
   </ItemGroup>

@@ -5,7 +5,11 @@
 #include "EAStdC/EAStdC.h"
 #include "EAStdC/EASprintf.h"
 #include "EAStdC/EABitTricks.h"
+#include "EAStdC/EAString.h"
 #include "stb_image.h"
+#include "cgltf.h"
+
+#define MESH_MAX_NUM_SECTIONS 4
 
 enum
 {
@@ -21,6 +25,20 @@ struct FVertex
 {
 	XMFLOAT3 Position;
 	XMFLOAT3 Normal;
+};
+
+struct FMeshSection
+{
+	uint32_t IndexCount;
+	uint32_t StartIndexLocation;
+	uint32_t BaseVertexLocation;
+	uint32_t MaterialIndex;
+};
+
+struct FMesh
+{
+	FMeshSection Sections[MESH_MAX_NUM_SECTIONS];
+	uint32_t NumSections;
 };
 
 struct FStaticMesh
@@ -306,7 +324,7 @@ static void CreatePipelines(FGraphicsContext& Gfx, uint32_t NumSamples, eastl::v
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC PSODesc = {};
 		PSODesc.InputLayout = { InPositionNormal, (UINT)eastl::size(InPositionNormal) };
 		PSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-		PSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+		PSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 		PSODesc.RasterizerState.MultisampleEnable = NumSamples > 1 ? TRUE : FALSE;
 		PSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 		PSODesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
@@ -324,7 +342,7 @@ static void CreatePipelines(FGraphicsContext& Gfx, uint32_t NumSamples, eastl::v
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC PSODesc = {};
 		PSODesc.InputLayout = { InPositionNormal, (UINT)eastl::size(InPositionNormal) };
 		PSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-		PSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+		PSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 		PSODesc.RasterizerState.MultisampleEnable = NumSamples > 1 ? TRUE : FALSE;
 		PSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 		PSODesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
@@ -344,7 +362,7 @@ static void CreatePipelines(FGraphicsContext& Gfx, uint32_t NumSamples, eastl::v
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC PSODesc = {};
 		PSODesc.InputLayout = { InPositionNormal, (UINT)eastl::size(InPositionNormal) };
 		PSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-		PSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+		PSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 		PSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 		PSODesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 		PSODesc.DepthStencilState.DepthEnable = FALSE;
@@ -407,7 +425,7 @@ static void CreateEnvMap(FGraphicsContext& Gfx, const FStaticMesh& Cube, ID3D12R
 		D3D12_SHADER_RESOURCE_VIEW_DESC SRVDesc = {};
 		SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
 		SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		SRVDesc.TextureCube.MipLevels = -1;
+		SRVDesc.TextureCube.MipLevels = (uint32_t)-1;
 		Gfx.Device->CreateShaderResourceView(OutEnvMap, &SRVDesc, OutEnvMapSRV);
 
 
@@ -498,7 +516,7 @@ static void CreateIrradianceMap(FGraphicsContext& Gfx, D3D12_CPU_DESCRIPTOR_HAND
 		D3D12_SHADER_RESOURCE_VIEW_DESC SRVDesc = {};
 		SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
 		SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		SRVDesc.TextureCube.MipLevels = -1;
+		SRVDesc.TextureCube.MipLevels = (uint32_t)-1;
 		Gfx.Device->CreateShaderResourceView(OutIrradianceMap, &SRVDesc, OutIrradianceMapSRV);
 
 
@@ -700,6 +718,133 @@ static void CreateBRDFIntegrationMap(FGraphicsContext& Gfx, ID3D12Resource*& Out
 	Gfx.CmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(OutBRDFIntegrationMap, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 }
 
+static void LoadGLTFMesh(const char* FileName, FMesh& OutMesh, eastl::vector<FVertex>& InOutVertices, eastl::vector<uint32_t>& InOutIndices)
+{
+	cgltf_options Options = {};
+	cgltf_data* Data = nullptr;
+	{
+		cgltf_result R = cgltf_parse_file(&Options, FileName, &Data);
+		EA_ASSERT(R == cgltf_result_success);
+		R = cgltf_load_buffers(&Options, Data, FileName);
+		EA_ASSERT(R == cgltf_result_success);
+	}
+
+	cgltf_mesh* Mesh = &Data->meshes[0];
+	EA_ASSERT(Mesh->primitives_count <= MESH_MAX_NUM_SECTIONS);
+
+	OutMesh.NumSections = (uint32_t)Mesh->primitives_count;
+
+	uint32_t TotalNumVertices = 0;
+	uint32_t TotalNumIndices = 0;
+
+	for (uint32_t SectionIdx = 0; SectionIdx < Mesh->primitives_count; ++SectionIdx)
+	{
+		EA_ASSERT(Data->meshes[0].primitives[SectionIdx].indices);
+		EA_ASSERT(Data->meshes[0].primitives[SectionIdx].attributes);
+
+		TotalNumIndices += (uint32_t)Data->meshes[0].primitives[SectionIdx].indices->count;
+		TotalNumVertices += (uint32_t)Data->meshes[0].primitives[SectionIdx].attributes[0].data->count;
+	}
+
+	InOutVertices.reserve(InOutVertices.size() + TotalNumVertices);
+	InOutIndices.reserve(InOutIndices.size() + TotalNumIndices);
+
+	eastl::vector<XMFLOAT3> Positions;
+	eastl::vector<XMFLOAT3> Normals;
+	Positions.reserve(TotalNumVertices);
+	Normals.reserve(TotalNumVertices);
+
+	for (uint32_t SectionIdx = 0; SectionIdx < Mesh->primitives_count; ++SectionIdx)
+	{
+		// Indices.
+		{
+			const cgltf_accessor* Accessor = Data->meshes[0].primitives[SectionIdx].indices;
+
+			EA_ASSERT(Accessor->buffer_view);
+			EA_ASSERT(Accessor->stride == Accessor->buffer_view->stride || Accessor->buffer_view->stride == 0);
+			EA_ASSERT((Accessor->stride * Accessor->count) == Accessor->buffer_view->size);
+
+			const auto DataAddr = (const uint8_t*)Accessor->buffer_view->buffer->data + Accessor->offset + Accessor->buffer_view->offset;
+
+			OutMesh.Sections[SectionIdx].StartIndexLocation = (uint32_t)InOutIndices.size();
+			OutMesh.Sections[SectionIdx].IndexCount = (uint32_t)Accessor->count;
+
+			if (Accessor->stride == 1)
+			{
+				const uint8_t* DataU8 = (const uint8_t*)DataAddr;
+				for (uint32_t Idx = 0; Idx < Accessor->count; ++Idx)
+				{
+					InOutIndices.push_back((uint32_t)* DataU8++);
+				}
+			}
+			else if (Accessor->stride == 2)
+			{
+				const uint16_t* DataU16 = (const uint16_t*)DataAddr;
+				for (uint32_t Idx = 0; Idx < Accessor->count; ++Idx)
+				{
+					InOutIndices.push_back((uint32_t)* DataU16++);
+				}
+			}
+			else if (Accessor->stride == 4)
+			{
+				InOutIndices.resize(InOutIndices.size() + Accessor->count);
+				memcpy(&InOutIndices[InOutIndices.size() - Accessor->count], DataAddr, Accessor->count * Accessor->stride);
+			}
+			else
+			{
+				EA_ASSERT(0);
+			}
+		}
+
+		// Attributes.
+		{
+			const uint32_t NumAttribs = (uint32_t)Data->meshes[0].primitives[SectionIdx].attributes_count;
+
+			for (uint32_t AttribIdx = 0; AttribIdx < NumAttribs; ++AttribIdx)
+			{
+				const cgltf_attribute* Attrib = &Data->meshes[0].primitives[SectionIdx].attributes[AttribIdx];
+				const cgltf_accessor* Accessor = Attrib->data;
+
+				EA_ASSERT(Accessor->buffer_view);
+				EA_ASSERT(Accessor->stride == Accessor->buffer_view->stride || Accessor->buffer_view->stride == 0);
+				EA_ASSERT((Accessor->stride * Accessor->count) == Accessor->buffer_view->size);
+
+				const auto DataAddr = (const uint8_t*)Accessor->buffer_view->buffer->data + Accessor->offset + Accessor->buffer_view->offset;
+
+				if (Attrib->type == cgltf_attribute_type_position)
+				{
+					EA_ASSERT(Accessor->type == cgltf_type_vec3);
+					Positions.resize(Accessor->count);
+					memcpy(Positions.data(), DataAddr, Accessor->count * Accessor->stride);
+				}
+				else if (Attrib->type == cgltf_attribute_type_normal)
+				{
+					EA_ASSERT(Accessor->type == cgltf_type_vec3);
+					Normals.resize(Accessor->count);
+					memcpy(Normals.data(), DataAddr, Accessor->count * Accessor->stride);
+				}
+			}
+
+			EA_ASSERT(Positions.size() > 0 && Positions.size() == Normals.size());
+
+			OutMesh.Sections[SectionIdx].BaseVertexLocation = (uint32_t)InOutVertices.size();
+
+			for (uint32_t Idx = 0; Idx < Positions.size(); ++Idx)
+			{
+				FVertex Vertex;
+				Vertex.Position = Positions[Idx];
+				Vertex.Normal = Normals[Idx];
+				InOutVertices.push_back(Vertex);
+			}
+
+			Positions.clear();
+			Normals.clear();
+		}
+	}
+
+	cgltf_free(Data);
+}
+
 static void Initialize(FDemoRoot& Root)
 {
 	FGraphicsContext& Gfx = Root.Gfx;
@@ -711,37 +856,18 @@ static void Initialize(FDemoRoot& Root)
 	CreateUIContext(Gfx, NumSamples, Root.UI, TempResources);
 	CreatePipelines(Gfx, NumSamples, Root.Pipelines, Root.RootSignatures);
 
-
-	eastl::vector<FVertex> VertexData;
-	eastl::vector<uint32_t> Triangles;
-
-	// Scene data.
+	eastl::vector<FVertex> AllVertices;
+	eastl::vector<uint32_t> AllIndices;
 	{
-		eastl::vector<XMFLOAT3> Positions;
-		eastl::vector<XMFLOAT3> Normals;
-		eastl::vector<XMFLOAT2> Texcoords;
-
-		const char* MeshNames[] = { "Data/Meshes/Cube.ply", "Data/Meshes/Sphere.ply" };
-		for (uint32_t MeshIdx = 0; MeshIdx < eastl::size(MeshNames); ++MeshIdx)
 		{
-			const size_t PositionsSize = Positions.size();
-			const size_t TrianglesSize = Triangles.size();
-			LoadPLYFile(MeshNames[MeshIdx], Positions, Normals, Texcoords, Triangles);
-
-			const uint32_t IndexCount = (uint32_t)(Triangles.size() - TrianglesSize);
-			const uint32_t StartIndexLocation = (uint32_t)TrianglesSize;
-			const uint32_t BaseVertexLocation = (uint32_t)PositionsSize;
-			Root.StaticMeshes.push_back(FStaticMesh{ IndexCount, StartIndexLocation, BaseVertexLocation });
+			FMesh Mesh = {};
+			LoadGLTFMesh("Data/Meshes/Cube.gltf", Mesh, AllVertices, AllIndices);
+			Root.StaticMeshes.push_back(FStaticMesh{ Mesh.Sections[0].IndexCount, Mesh.Sections[0].StartIndexLocation, Mesh.Sections[0].BaseVertexLocation });
 		}
-
-		VertexData.reserve(Positions.size());
-
-		for (uint32_t Idx = 0; Idx < Positions.size(); ++Idx)
 		{
-			FVertex Vertex;
-			Vertex.Position = Positions[Idx];
-			Vertex.Normal = Normals[Idx];
-			VertexData.push_back(Vertex);
+			FMesh Mesh = {};
+			LoadGLTFMesh("Data/Meshes/Sphere.gltf", Mesh, AllVertices, AllIndices);
+			Root.StaticMeshes.push_back(FStaticMesh{ Mesh.Sections[0].IndexCount, Mesh.Sections[0].StartIndexLocation, Mesh.Sections[0].BaseVertexLocation });
 		}
 
 		const int32_t NumRows = 5;
@@ -772,7 +898,7 @@ static void Initialize(FDemoRoot& Root)
 
 	// Static geometry vertex buffer (single buffer for all static meshes).
 	{
-		const D3D12_RESOURCE_DESC Desc = CD3DX12_RESOURCE_DESC::Buffer(VertexData.size() * sizeof(FVertex));
+		const D3D12_RESOURCE_DESC Desc = CD3DX12_RESOURCE_DESC::Buffer(AllVertices.size() * sizeof(FVertex));
 
 		ID3D12Resource* StagingVB;
 		VHR(Gfx.Device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&StagingVB)));
@@ -780,14 +906,14 @@ static void Initialize(FDemoRoot& Root)
 
 		void* Ptr;
 		VHR(StagingVB->Map(0, &CD3DX12_RANGE(0, 0), &Ptr));
-		memcpy(Ptr, VertexData.data(), VertexData.size() * sizeof(FVertex));
+		memcpy(Ptr, AllVertices.data(), AllVertices.size() * sizeof(FVertex));
 		StagingVB->Unmap(0, nullptr);
 
 		VHR(Gfx.Device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&Root.StaticVB)));
 
 		Root.StaticVBView.BufferLocation = Root.StaticVB->GetGPUVirtualAddress();
 		Root.StaticVBView.StrideInBytes = sizeof(FVertex);
-		Root.StaticVBView.SizeInBytes = (UINT)VertexData.size() * sizeof(FVertex);
+		Root.StaticVBView.SizeInBytes = (UINT)AllVertices.size() * sizeof(FVertex);
 
 		Gfx.CmdList->CopyResource(Root.StaticVB, StagingVB);
 		Gfx.CmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(Root.StaticVB, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
@@ -795,7 +921,7 @@ static void Initialize(FDemoRoot& Root)
 
 	// Static geometry index buffer (single buffer for all static meshes).
 	{
-		const D3D12_RESOURCE_DESC Desc = CD3DX12_RESOURCE_DESC::Buffer(Triangles.size() * sizeof(uint32_t));
+		const D3D12_RESOURCE_DESC Desc = CD3DX12_RESOURCE_DESC::Buffer(AllIndices.size() * sizeof(uint32_t));
 
 		ID3D12Resource* StagingIB;
 		VHR(Gfx.Device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&StagingIB)));
@@ -803,14 +929,14 @@ static void Initialize(FDemoRoot& Root)
 
 		void* Ptr;
 		VHR(StagingIB->Map(0, &CD3DX12_RANGE(0, 0), &Ptr));
-		memcpy(Ptr, Triangles.data(), Triangles.size() * sizeof(uint32_t));
+		memcpy(Ptr, AllIndices.data(), AllIndices.size() * sizeof(uint32_t));
 		StagingIB->Unmap(0, nullptr);
 
 		VHR(Gfx.Device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&Root.StaticIB)));
 
 		Root.StaticIBView.BufferLocation = Root.StaticIB->GetGPUVirtualAddress();
 		Root.StaticIBView.Format = DXGI_FORMAT_R32_UINT;
-		Root.StaticIBView.SizeInBytes = (UINT)Triangles.size() * sizeof(uint32_t);
+		Root.StaticIBView.SizeInBytes = (UINT)AllIndices.size() * sizeof(uint32_t);
 
 		Gfx.CmdList->CopyResource(Root.StaticIB, StagingIB);
 		Gfx.CmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(Root.StaticIB, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER));
@@ -829,8 +955,7 @@ static void Initialize(FDemoRoot& Root)
 	Gfx.CmdList->SetPipelineState(Root.Pipelines[PSO_GenerateIrradianceMap]);
 	Gfx.CmdList->SetGraphicsRootSignature(Root.RootSignatures[PSO_GenerateIrradianceMap]);
 	CreateIrradianceMap(Root.Gfx, Root.EnvMapSRV, Root.StaticMeshes[MESH_Cube], Root.IrradianceMap, Root.IrradianceMapSRV, TempResources);
-	//TexturesThatNeedMipmaps.push_back(Root.IrradianceMap);
-	
+
 	// Create PrefilteredEnvMap.
 	Gfx.CmdList->SetPipelineState(Root.Pipelines[PSO_PrefilterEnvMap]);
 	Gfx.CmdList->SetGraphicsRootSignature(Root.RootSignatures[PSO_PrefilterEnvMap]);
@@ -894,7 +1019,6 @@ static void Initialize(FDemoRoot& Root)
 			DestroyMipmapGenerator(MipmapGenerators[Idx]);
 		}
 	}
-
 
 	Root.CameraPosition = XMFLOAT3(0.0f, 0.0f, -10.0f);
 	Root.CameraFocusPosition = XMFLOAT3(0.0f, 0.0f, 0.0f);
